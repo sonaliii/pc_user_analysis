@@ -8,19 +8,27 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.cross_validation import cross_val_score
 from sklearn.cross_validation import train_test_split
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.cluster import KMeans
+from sklearn.decomposition import NMF
+from collections import defaultdict
 from referrals import Referrals
+from nltk.corpus import stopwords
 import matplotlib
 import seaborn
 
 
 class Facebook(object):
     def __init__(self):
-        self.filenames = ['../data/fb.json', '../data/fb2.json', '../data/fb3.json', '../data/fb4.json', '../data/fb5.json', '../data/fb6.json', '../data/fb7.json']
+        self.filenames = ['../data/fb.json', '../data/fb2.json', '../data/fb3.json', 
+            '../data/fb4.json', '../data/fb5.json', '../data/fb6.json', 
+            '../data/fb7.json', '../data/fb8.json', '../data/fb9.json', 
+            '../data/fb10.json']
+        self.comments = pd.read_csv('../data/comments.csv')
         r = Referrals()
         referrers = r.count_referrals()
         priority_users = r.identify_priority_users(referrers)
         self.users = r.count_circles(priority_users)
-        print self.users.columns
 
     def load_fb_data(self, filename):
         f = open(filename, 'r')
@@ -54,7 +62,6 @@ class Facebook(object):
         #Selecting columns/features to return
         user_cols = list(self.users.columns)
         extra_cols = ['gender', 'name', 'locale']
-        print user_cols, 'should include priority'
         return fb_users[user_cols + extra_cols]
 
     def binarize_gender(self, fb_users):
@@ -99,7 +106,7 @@ class Facebook(object):
         ratios = []
         for col in X.columns:
             conditions = X[col] == 1
-            ratios.append(col + '\t' + str(mean(y['Priority'][conditions])) + '\t\t\t\t(' + str(mean(y['Priority'][conditions]) * sum(X[col][conditions])) + '/' + str(sum(X[col][conditions])) + ')')
+            ratios.append(col + '\t' + str(np.mean(y['Priority'][conditions])) + '\t\t\t\t(' + str(np.mean(y['Priority'][conditions]) * sum(X[col][conditions])) + '/' + str(sum(X[col][conditions])) + ')')
         return ratios
 
     def plot_priority_ratios(self, X, y):
@@ -114,6 +121,69 @@ class Facebook(object):
             plt.ylabel(col)
             plt.title(col + ' by Low and High Priority Users');
 
+    def tfidf_comments(self, fb_users, y):
+        
+
+    #     comments = comments.merge(fb_users, how='left', left_on='user_id', right_on='UserID')
+    #     comments = comments[comments['Priority'] == False]
+    #     print np.unique(fb_users['Priority']), 'priority'
+    #     print np.unique(comments['Priority'])
+        comments = self.comments
+        stop = stopwords.words('english')
+        other_stop = ['lol', 'wtf', 'haha', 'hahaha', 'hahahaha', 'aww', 
+                   'awww', 'awwww', 'awwwww', 'omg', 'lmao', 'picture', 
+                   'pic', 'photo', 'oh', 'yes', 'no', 'like', 'likes', 
+                   'look', 'looks', 'hahah', 'hahahah', 'hahahahah',
+                   'thanks', 'thank', 'you', 'ha', 'ah', 'please', 
+                   'wow', 'great', 'good', 'awesome', 'go', 'got', 'get',
+                   'yup', 'yep', 'yeah', 'really', 'one', 'think', 'hi',
+                   'hahahahaha', 'aw', 'so', 'soo', 'sooo', 'soooo',
+                   'tho', 'though', 'two', 'didn', 're', 've']
+        stop = stop + other_stop
+        vectorizer = TfidfVectorizer(max_df=0.95, min_df=2, stop_words=stop, max_features=1000)
+        model = vectorizer.fit_transform(comments['comment_text'])
+        return vectorizer, model
+
+    def nm(self, tf, transformed):
+        #Non-negative matrix factorization (clustering)
+        nmf = NMF(n_components=10, random_state=1).fit(transformed)
+        feature_names = tf.get_feature_names()
+        for topic_idx, topic in enumerate(nmf.components_):
+            print("Topic #%d:" % topic_idx)
+            print(" ".join([feature_names[i]
+                            for i in topic.argsort()[:-11:-1]]))
+            print()
+
+    def km(self, tf, transformed):
+        #KMeans (also clustering)
+        km = KMeans(n_clusters=6)
+        kmean = km.fit_transform(transformed)
+        centroids = km.cluster_centers_
+        
+        #Find top 10 words for each cluster
+        centroid_top_indices = []
+        for centroid in centroids:
+            centroid_sorted = np.array(centroid).argsort()[::-1]
+            centroid_top_indices.append(centroid_sorted[0:10])
+            
+        features = np.array(tf.get_feature_names())
+        centroid_top_feats = []
+        for centroid in centroid_top_indices:
+            centroid_top_feats.append(features[centroid])
+            
+        cluster_assignments = km.fit_predict(transformed)
+
+        clusters = defaultdict(list)
+        for i, j in enumerate(cluster_assignments[0:32]):
+            clusters[j].append(i) 
+            
+        # for cluster in dict(clusters).iteritems():
+        #     print cluster
+        #     for item in cluster:
+        #         print self.comments['comment_text'][item]
+        return centroid_top_feats
+
+
 
 if __name__ == '__main__':
     fb = Facebook()
@@ -125,6 +195,11 @@ if __name__ == '__main__':
     locales = fb.binarize_locales(fb_users)
     X = fb.create_X(fb_users, locales)
     y = fb.create_y(fb_users)
+    tf, tmodel = fb.tfidf_comments(fb_users, y)
+    # k = fb.km(tf, tmodel)
+    n = fb.nm(tf, tmodel)
     model, score = fb.build_model(X, y)
     important_cols = fb.find_important_features(model)
     print score, 'accuracy score'
+    print fb.priority_ratios(X, y)
+    # print k, 'KMeans'
