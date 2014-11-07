@@ -11,4 +11,4 @@ joined = grouped.aggregate({'comment_text': ' '.join})
 joined = joined.reset_index()
 
 #Saving to CSV
-joined.to_csv('comments.csv', encoding='utf-8')
+joined.to_csv('../data/comments.csv', encoding='utf-8')
