@@ -46,6 +46,10 @@ class Referrals(object):
         #Setting priority users to those who have referred at least 10 other users
         referrers['Priority'] = referrers['Referrals'].apply(lambda x: True if x >= 10 else False)
         
+        #Trying various limits for priority number of referrals
+        for i in range(10):
+            referrers['Priority' + str(i + 1)] = referrers['Referrals'].apply(lambda x: True if x >= i + 1 else False)
+    
         #Merging all users with those who have referred others
         users = self.user_df.merge(referrers, how='outer', left_on='UserID', right_on='SourceUserID')
         users = users.drop('SourceUserID_x', axis = 1)
