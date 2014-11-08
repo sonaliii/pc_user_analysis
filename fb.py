@@ -14,6 +14,7 @@ from sklearn.decomposition import NMF
 from collections import defaultdict
 from referrals import Referrals
 from nltk.corpus import stopwords
+import ast
 import matplotlib
 import seaborn
 
@@ -53,6 +54,44 @@ class Facebook(object):
         fb_users = final_df.drop_duplicates(cols='id')
         return fb_users
 
+    def extract_work_info(self, fb_users):
+        works = fb_users['work'].fillna("[{'position': {'name': 'None'}, 'employer': {'name': 'None'}}]")
+        works = list(works)
+        job_titles = []
+        employers = []
+        for work in works:
+            job_title = []
+            employer = []
+            if isinstance(work, str):
+                work = ast.literal_eval(work)
+            for pos in work:
+                if 'position' in pos.keys():
+                    job_title.append(pos['position']['name'])
+                else:
+                    job_title.append('None')
+                if pos['employer']:
+                    try:
+                        employer.append(pos['employer']['name'])
+                    except KeyError:
+                        employer.append('None')
+                else:
+                    employer.append('None')
+            job_titles.append(job_title[0])
+            employers.append(employer[0])
+        fb_users['job_titles'] = job_titles
+        fb_users['employers'] = employers
+        return fb_users
+
+    def extract_hometown_info(self, fb_users):
+        hometowns = list(fb_users['hometown'].fillna("{'name': 'None'}"))
+        homes = []
+        for hometown in hometowns:
+            if isinstance(hometown, str):
+                hometown = ast.literal_eval(hometown)
+            homes.append(hometown['name'])
+        fb_users['hometowns'] = homes
+        return fb_users
+
     def combine_all_features(self, df):
         
         fb_users = self.users
@@ -61,27 +100,30 @@ class Facebook(object):
         
         #Selecting columns/features to return
         user_cols = list(self.users.columns)
-        extra_cols = ['gender', 'name', 'locale']
+        extra_cols = ['gender', 'name', 'locale', 'employers', 'job_titles', 'hometowns']
         return fb_users[user_cols + extra_cols]
 
     def binarize_gender(self, fb_users):
         fb_users['gender'] = fb_users['gender'].apply(lambda x: 1 if x == 'female' else 0 if x == 'male' else -1)
         return fb_users
 
-    def binarize_locales(self, fb_users):
+    def binarize_col(self, fb_users, col_name):
         
         #Preparing and cleaning data for machine learning
-        locales = pd.get_dummies(fb_users['locale'])
-        return locales
+        binarized = pd.get_dummies(fb_users[str(col_name)])
+        return binarized
 
     def only_users_with_X(self, fb_users, x):
         for feature in x:
             fb_users = fb_users[fb_users[feature] != -1]
         return fb_users
 
-    def create_X(self, fb_users, locales):       
+    def create_X(self, fb_users, locales, employers, job_titles, hometowns):       
         X = fb_users[['Circles', 'gender']]
         X = X.join(locales)
+        X = X.join(employers)
+        X = X.join(job_titles, rsuffix='_job')
+        X = X.join(hometowns)
         X['Circles'] = X['Circles'].fillna(0)
         return X
 
@@ -191,11 +233,16 @@ if __name__ == '__main__':
     fb = Facebook()
     dfs = fb.load_all_fbs()
     fb_users = fb.merge_dfs(dfs)
+    fb_users = fb.extract_work_info(fb_users)
+    fb_users = fb.extract_hometown_info(fb_users)
     fb_users = fb.combine_all_features(fb_users) 
     fb_users = fb.binarize_gender(fb_users)
     fb_users = fb.only_users_with_X(fb_users, ['gender', 'name'])
-    locales = fb.binarize_locales(fb_users)
-    X = fb.create_X(fb_users, locales)
+    locales = fb.binarize_col(fb_users, 'locale')
+    employers = fb.binarize_col(fb_users, 'employers')
+    job_titles = fb.binarize_col(fb_users, 'job_titles')
+    hometowns = fb.binarize_col(fb_users, 'hometowns')
+    X = fb.create_X(fb_users, locales, employers, job_titles, hometowns)
     y = fb.create_y(fb_users)
     tf, tmodel = fb.tfidf_comments(fb_users, y)
     # k = fb.km(tf, tmodel)
