@@ -106,7 +106,9 @@ class Facebook(object):
         ratios = []
         for col in X.columns:
             conditions = X[col] == 1
-            ratios.append(col + '\t' + str(np.mean(y['Priority'][conditions])) + '\t\t\t\t(' + str(np.mean(y['Priority'][conditions]) * sum(X[col][conditions])) + '/' + str(sum(X[col][conditions])) + ')')
+            printout = col + '\t' + str(np.mean(y['Priority'][conditions])) + '\t\t\t\t(' + str(np.mean(y['Priority'][conditions]) * sum(X[col][conditions])) + '/' + str(sum(X[col][conditions])) + ')'
+            print printout
+            ratios.append(printout)
         return ratios
 
     def plot_priority_ratios(self, X, y):
@@ -201,5 +203,5 @@ if __name__ == '__main__':
     model, score = fb.build_model(X, y)
     important_cols = fb.find_important_features(model)
     print score, 'accuracy score'
-    print fb.priority_ratios(X, y)
+    fb.priority_ratios(X, y)
     # print k, 'KMeans'
