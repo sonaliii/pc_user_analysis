@@ -13,13 +13,45 @@ import seaborn
 
 # %pylab inline
 
-#Loading app user data
-# u = pd.read_csv('../u.csv', sep=',', error_bad_lines=False, dtype={'UserID': 'object', 'SourceUserID': 'object', 'Email': 'object', 'FacebookID': 'object', 'CircleIDs': 'object'})
 
 class Referrals(object):
     def __init__(self):
         self.user_df = pd.read_csv('../data/u.csv', sep=',', error_bad_lines=False, dtype={'UserID': 'object', 'SourceUserID': 'object', 'Email': 'object', 'FacebookID': 'object', 'CircleIDs': 'object'})
+        self.weeks = pd.read_csv('../data/week_counts.csv', sep=',', error_bad_lines=False, header=None)
+        self.weeks.columns = ['user_id', 'weeks']
         self.users = None
+
+    def join_referrals_weeks(self):
+        referrals = self.user_df[['UserID', 'SourceUserID']].dropna()
+        weeks = self.weeks
+        referral_weeks = referrals.merge(weeks, how='inner', left_on='UserID', right_on='user_id')
+        referral_weeks = referral_weeks.groupby('SourceUserID')
+        summed = referral_weeks.aggregate({'weeks': np.sum})
+        summed = summed.reset_index()
+        summed.columns = ['user_id', 'weeks']
+        return summed
+
+    def priority_by_weeks(self, referral_weeks_df):
+        referrers = referral_weeks_df
+        #Setting priority users to those who have referred at least 10 other users
+        referrers['Priority'] = referrers['Referrals'].apply(lambda x: True if x >= 10 else False)
+        
+        #Trying various limits for priority number of referrals
+        for i in range(10):
+            referrers['Priority' + str(i + 1)] = referrers['Referrals'].apply(lambda x: True if x >= i + 1 else False)
+    
+        #Merging all users with those who have referred others
+        users = self.user_df.merge(referrers, how='outer', left_on='UserID', right_on='SourceUserID')
+        users = users.drop('SourceUserID_x', axis = 1)
+        users = users.drop('SourceUserID_y', axis = 1)
+        
+        #Replacing NAs with 0 referrals and False priority
+        users['Referrals'] = users['Referrals'].fillna(0)
+        users['Priority'] = users['Priority'].fillna(False)
+        
+        self.users = users
+        return users
+
 
     def count_referrals(self):
         users = self.user_df
