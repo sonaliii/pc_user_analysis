@@ -28,7 +28,7 @@ class Referrals(object):
         referral_weeks = referral_weeks.groupby('SourceUserID')
         summed = referral_weeks.aggregate({'weeks': np.sum})
         summed = summed.reset_index()
-        summed.columns = ['user_id', 'weeks']
+        summed.columns = ['UserID', 'Referrals']
         return summed
 
     def priority_by_weeks(self, referral_weeks_df):
@@ -41,9 +41,7 @@ class Referrals(object):
             referrers['Priority' + str(i + 1)] = referrers['Referrals'].apply(lambda x: True if x >= i + 1 else False)
     
         #Merging all users with those who have referred others
-        users = self.user_df.merge(referrers, how='outer', left_on='UserID', right_on='SourceUserID')
-        users = users.drop('SourceUserID_x', axis = 1)
-        users = users.drop('SourceUserID_y', axis = 1)
+        users = self.user_df.merge(referrers, how='outer', left_on='UserID', right_on='UserID')
         
         #Replacing NAs with 0 referrals and False priority
         users['Referrals'] = users['Referrals'].fillna(0)
@@ -112,6 +110,6 @@ class Referrals(object):
     
 if __name__=='__main__':
     r = Referrals()
-    referrers = r.count_referrals()
-    users = r.identify_priority_users(referrers)
+    referrers = r.join_referrals_weeks()
+    users = r.priority_by_weeks(referrers)
     r.count_circles(users)
