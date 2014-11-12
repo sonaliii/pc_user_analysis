@@ -1,7 +1,12 @@
 PC Usage Trends
 ================
 
-**App usage and retention analysis for PC**
+**App usage and retention analysis for PC photo-sharing**
+
+Introduction:
+The purpose of this program is to identify which app users are most likely to invite **more** users to the app. Using their publicly available and shared data from Facebook, this code creates a feature matrix and a random forest to identify the most valuable users. 
+
+In addition, users' comments and captions are used to identify the most common usage trends for the app. A TF-IDF vectorizer and non-negative matrix factorization are used for topic modeling.
 
 Getting Started:
 - comments.py: imports comment text and groups by user
