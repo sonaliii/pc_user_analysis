@@ -1,7 +1,7 @@
 PC Usage Trends
 ================
 
-**App usage and retention analysis for PhotoCircle**
+**App usage and retention analysis for PC**
 
 Getting Started:
 - comments.py: imports comment text and groups by user
