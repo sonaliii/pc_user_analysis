@@ -44,7 +44,7 @@ class Referrals(object):
     def identify_priority_users(self, referrers_df):
         referrers = referrers_df
         #Setting priority users to those who have referred at least 10 other users
-        referrers['Priority'] = referrers['Referrals'].apply(lambda x: True if x >= 10 else False)
+        referrers['Priority'] = referrers['Referrals'].apply(lambda x: True if x >= 1 else False)
         
         #Trying various limits for priority number of referrals
         for i in range(10):
