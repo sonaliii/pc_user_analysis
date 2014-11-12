@@ -15,6 +15,7 @@ from collections import defaultdict
 from referrals import Referrals
 from nltk.corpus import stopwords
 import ast
+import base64
 import matplotlib
 import seaborn
 
@@ -26,6 +27,7 @@ class Facebook(object):
             '../data/fb7.json', '../data/fb8.json', '../data/fb9.json', 
             '../data/fb10.json']
         self.comments = pd.read_csv('../data/comments.csv')
+        self.captions = pd.read_csv('../data/captions.csv')
         r = Referrals()
         referrers = r.count_referrals()
         priority_users = r.identify_priority_users(referrers)
@@ -100,7 +102,7 @@ class Facebook(object):
         
         #Selecting columns/features to return
         user_cols = list(self.users.columns)
-        extra_cols = ['gender', 'name', 'locale', 'employers', 'job_titles', 'hometowns']
+        extra_cols = ['gender', 'name', 'locale']
         return fb_users[user_cols + extra_cols]
 
     def binarize_gender(self, fb_users):
@@ -118,23 +120,28 @@ class Facebook(object):
             fb_users = fb_users[fb_users[feature] != -1]
         return fb_users
 
-    def create_X(self, fb_users, locales, employers, job_titles, hometowns):       
-        X = fb_users[['Circles', 'gender']]
+    def create_X(self, fb_users, locales, tftransformed):       
+        X = fb_users[['UserID', 'gender']]
         X = X.join(locales)
-        X = X.join(employers)
-        X = X.join(job_titles, rsuffix='_job')
-        X = X.join(hometowns)
-        X['Circles'] = X['Circles'].fillna(0)
+        X = X.merge(tftransformed, how='inner', left_on='UserID', right_on='user_id')
+        # X = X.join(employers)
+        # X = X.join(job_titles, rsuffix='_job')
+        # X = X.join(hometowns, rsuffix='_ht')
+        # X['Circles'] = X['Circles'].fillna(0)
+        X = X.drop('UserID', axis=1)
+        X = X.drop('user_id', axis=1)
         return X
 
-    def create_y(self, fb_users):
-        y = fb_users[['Priority']]
+    def create_y(self, fb_users, tftransformed):
+        y = fb_users[['UserID', 'Priority']]
+        y = y.merge(tftransformed, how='inner', left_on='UserID', right_on='user_id')
+        y = y[['Priority']]
         return y
 
     def build_model(self, X, y):
         #Random Forest model
         X_train, X_test, y_train, y_test = train_test_split(X, y)
-        rf = RandomForestClassifier(max_depth = 3, n_estimators = 100)
+        rf = RandomForestClassifier(max_depth = 3, n_estimators = 20, n_jobs = -1)
         model = rf.fit_transform(X_train, y_train)
         return rf, rf.score(X_test, y_test)
 
@@ -151,6 +158,7 @@ class Facebook(object):
             printout = col + '\t' + str(np.mean(y['Priority'][conditions])) + '\t\t\t\t(' + str(np.mean(y['Priority'][conditions]) * sum(X[col][conditions])) + '/' + str(sum(X[col][conditions])) + ')'
             print printout
             ratios.append(printout)
+        print 'male\t' + str(np.mean(y['Priority'][X['gender'] == 0])) 
         return ratios
 
     def plot_priority_ratios(self, X, y):
@@ -165,14 +173,15 @@ class Facebook(object):
             plt.ylabel(col)
             plt.title(col + ' by Low and High Priority Users');
 
-    def tfidf_comments(self, fb_users, y):
-        
-
-    #     comments = comments.merge(fb_users, how='left', left_on='user_id', right_on='UserID')
-    #     comments = comments[comments['Priority'] == False]
-    #     print np.unique(fb_users['Priority']), 'priority'
-    #     print np.unique(comments['Priority'])
+    def tfidf_comments(self, fb_users):
         comments = self.comments
+        decoded_ids = []
+        for uid in comments['user_id']:
+            decoded_ids.append(base64.b64decode(uid))
+        comments['user_id'] = decoded_ids
+
+        comments = comments.merge(fb_users, how='left', left_on='user_id', right_on='UserID')
+        
         stop = stopwords.words('english')
         other_stop = ['lol', 'wtf', 'haha', 'hahaha', 'hahahaha', 'aww', 
                    'awww', 'awwww', 'awwwww', 'omg', 'lmao', 'picture', 
@@ -184,11 +193,41 @@ class Facebook(object):
                    'hahahahaha', 'aw', 'so', 'soo', 'sooo', 'soooo',
                    'tho', 'though', 'two', 'didn', 're', 've']
         stop = stop + other_stop
-        vectorizer = TfidfVectorizer(max_df=0.95, min_df=2, stop_words=stop, max_features=1000)
+        vectorizer = TfidfVectorizer(max_df=0.95, min_df=2, stop_words=stop, max_features=100)
         model = vectorizer.fit_transform(comments['comment_text'])
+        model = pd.DataFrame(model.todense(), columns=vectorizer.get_feature_names())
+
+        model = model.set_index(comments['user_id'])
+        model = model.reset_index()
+        return vectorizer, model
+
+
+    def tfidf_captions(self, fb_users):
+        captions = self.captions
+        decoded_ids = []
+
+        captions = captions.merge(fb_users, how='left', left_on='user_id', right_on='UserID')
+        
+        stop = stopwords.words('english')
+        other_stop = ['lol', 'wtf', 'haha', 'hahaha', 'hahahaha', 'aww', 
+                   'awww', 'awwww', 'awwwww', 'omg', 'lmao', 'picture', 
+                   'pic', 'photo', 'oh', 'yes', 'no', 'like', 'likes', 
+                   'look', 'looks', 'hahah', 'hahahah', 'hahahahah',
+                   'thanks', 'thank', 'you', 'ha', 'ah', 'please', 
+                   'wow', 'great', 'good', 'awesome', 'go', 'got', 'get',
+                   'yup', 'yep', 'yeah', 'really', 'one', 'think', 'hi',
+                   'hahahahaha', 'aw', 'so', 'soo', 'sooo', 'soooo',
+                   'tho', 'though', 'two', 'didn', 're', 've']
+        stop = stop + other_stop
+        vectorizer = TfidfVectorizer(max_df=0.95, min_df=2, stop_words=stop, max_features=100)
+        model = vectorizer.fit_transform(captions['caption'])
+        model = pd.DataFrame(model.todense(), columns=vectorizer.get_feature_names())
+        model = model.set_index(captions['user_id'])
+        model = model.reset_index()
         return vectorizer, model
 
     def nm(self, tf, transformed):
+        transformed = transformed.drop('user_id', axis=1)
         #Non-negative matrix factorization (clustering)
         nmf = NMF(n_components=10, random_state=1).fit(transformed)
         feature_names = tf.get_feature_names()
@@ -233,22 +272,29 @@ if __name__ == '__main__':
     fb = Facebook()
     dfs = fb.load_all_fbs()
     fb_users = fb.merge_dfs(dfs)
-    fb_users = fb.extract_work_info(fb_users)
-    fb_users = fb.extract_hometown_info(fb_users)
+    # fb_users = fb.extract_work_info(fb_users)
+    # fb_users = fb.extract_hometown_info(fb_users)
     fb_users = fb.combine_all_features(fb_users) 
     fb_users = fb.binarize_gender(fb_users)
-    fb_users = fb.only_users_with_X(fb_users, ['gender', 'name'])
+    fb_users = fb.only_users_with_X(fb_users, ['gender'])
     locales = fb.binarize_col(fb_users, 'locale')
-    employers = fb.binarize_col(fb_users, 'employers')
-    job_titles = fb.binarize_col(fb_users, 'job_titles')
-    hometowns = fb.binarize_col(fb_users, 'hometowns')
-    X = fb.create_X(fb_users, locales, employers, job_titles, hometowns)
-    y = fb.create_y(fb_users)
-    tf, tmodel = fb.tfidf_comments(fb_users, y)
-    # k = fb.km(tf, tmodel)
-    n = fb.nm(tf, tmodel)
+    # employers = fb.binarize_col(fb_users, 'employers')
+    # job_titles = fb.binarize_col(fb_users, 'job_titles')
+    # hometowns = fb.binarize_col(fb_users, 'hometowns')
+    # tf, tmodel = fb.tfidf_comments(fb_users)
+    tf2, tmodel2 = fb.tfidf_captions(fb_users)
+    X = fb.create_X(fb_users, locales, tmodel2)
+    # print X.shape
+    y = fb.create_y(fb_users, tmodel2)
+    # print y.shape
+    # # k = fb.km(tf, tmodel)
+    # n = fb.nm(tf2, tmodel2)
+    # print 'CAPTIONS'
+    # n2 = fb.nm(tf2, tmodel2)
     model, score = fb.build_model(X, y)
+    # print 'model built'
     important_cols = fb.find_important_features(model)
+    print important_cols, 'important colums'
     print score, 'accuracy score'
     fb.priority_ratios(X, y)
     # print k, 'KMeans'
