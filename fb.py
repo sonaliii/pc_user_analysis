@@ -33,10 +33,11 @@ class Facebook(object):
         self.captions = pd.read_csv('../data/captions.csv')
         r = Referrals()
         # referrers = r.count_referrals()
-        referral_weeks = r.join_referrals_weeks()
-        priority_users = r.priority_by_weeks(referral_weeks)
+        # referral_weeks = r.join_referrals_weeks()
+        # priority_users = r.priority_by_weeks(referral_weeks)
         priority_retention = r.priority_retention()
         self.users = r.count_circles(priority_retention)
+        print np.median(self.users['weeks'])
         self.vocab = []
         self.stop = stopwords.words('english')
         self.other_stop = ['lol', 'wtf', 'haha', 'hahaha', 'hahahaha', 'aww', 
@@ -50,7 +51,8 @@ class Facebook(object):
                    'tho', 'though', 'two', 'didn', 're', 've', 'way',
                    'time', 'best', 'would', 'trying', 'room', 'day',
                    'see', 'gotta', 'im', 'dat', 'hey', 'bae', 'much',
-                   'back', 'isn', 'ya']
+                   'back', 'isn', 'ya', 'let', 'first', 'take', 'us',
+                   'come', 'doe', 'pre', 'took', 'taking', 'ur']
 
     def load_fb_data(self, filename):
         f = open(filename, 'r')
@@ -140,20 +142,20 @@ class Facebook(object):
         return fb_users
 
     def create_X(self, fb_users, locales, tftransformed):       
-        X = fb_users[['UserID', 'gender']]
+        X = fb_users[['UserID', 'gender', 'Circles', 'has_circles']]
         X = X.join(locales)
-        X = X.merge(tftransformed, how='inner', left_on='UserID', right_on='user_id')
+        X = X.merge(tftransformed, how='inner', left_on='UserID', right_on='UserID')
         # X = X.join(employers)
         # X = X.join(job_titles, rsuffix='_job')
         # X = X.join(hometowns, rsuffix='_ht')
-        # X['Circles'] = X['Circles'].fillna(0)
+        X['Circles'] = X['Circles'].fillna(0)
         X = X.drop('UserID', axis=1)
-        X = X.drop('user_id', axis=1)
+        # X = X.drop('user_id', axis=1)
         return X
 
     def create_y(self, fb_users, tftransformed):
         y = fb_users[['UserID', 'Priority']]
-        y = y.merge(tftransformed, how='inner', left_on='UserID', right_on='user_id')
+        y = y.merge(tftransformed, how='inner', left_on='UserID', right_on='UserID')
         y = y[['Priority']]
         return y
 
@@ -176,7 +178,7 @@ class Facebook(object):
         # print y_probs.info()
         print np.mean(y_probs), 'mean probs'
         y_probs = y_probs >= 0.088
-        print confusion_matrix(y_test, y_probs)
+        print confusion_matrix(y_test, y_pred)
         return rf, rf.score(X_test, y_test)
 
     def find_important_features(self, rf):
@@ -229,19 +231,21 @@ class Facebook(object):
     def tfidf_captions(self, fb_users):
         captions = self.captions
         captions = captions.merge(fb_users, how='left', left_on='user_id', right_on='UserID')
-
+        print captions.columns, 'caption columns'
         stop = self.stop + self.other_stop
         vectorizer = TfidfVectorizer(max_df=0.95, stop_words=stop, max_features=2000)
         model = vectorizer.fit_transform(captions['caption'])
         model = pd.DataFrame(model.todense(), columns=vectorizer.get_feature_names())
-        model = model.set_index(captions['user_id'])
+        model = model.set_index(captions['UserID'])
         model = model.reset_index()
         return vectorizer, model
 
     def nm(self, tf, transformed):
-        transformed = transformed.drop('user_id', axis=1)
+        # transformed = transformed.drop('user_id', axis=1)
+        transformed = transformed.drop('UserID', axis=1)
+
         #Non-negative matrix factorization (clustering)
-        nmf = NMF(n_components=10, random_state=1).fit(transformed)
+        nmf = NMF(n_components=10).fit(transformed)
         feature_names = tf.get_feature_names()
         self.vocab = []
         for topic_idx, topic in enumerate(nmf.components_):
@@ -261,7 +265,7 @@ class Facebook(object):
         vectorizer = TfidfVectorizer(max_df=0.95, stop_words=stop, vocabulary=self.vocab)
         model = vectorizer.fit_transform(captions['caption'])
         model = pd.DataFrame(model.todense(), columns=vectorizer.get_feature_names())
-        model = model.set_index(captions['user_id'])
+        model = model.set_index(captions['UserID'])
         model = model.reset_index()
         return vectorizer, model
 

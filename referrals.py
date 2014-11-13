@@ -33,8 +33,14 @@ class Referrals(object):
 
     def priority_retention(self):
         retention = self.weeks
-        retention['Priority'] = retention['weeks'].apply(lambda x: True if x >= 10 else False)
-        return retention
+        retention['Priority'] = retention['weeks'].apply(lambda x: True if x >= 52 else False)
+        users = self.user_df.merge(retention, how='outer', left_on='UserID', right_on='user_id')
+        #Replacing NAs with 0 referrals and False priority
+        users['weeks'] = users['weeks'].fillna(0)
+        users['Priority'] = users['Priority'].fillna(False)
+
+        self.users = users
+        return users
 
     def priority_by_weeks(self, referral_weeks_df):
         referrers = referral_weeks_df
@@ -115,7 +121,7 @@ class Referrals(object):
     
 if __name__=='__main__':
     r = Referrals()
-    referrers = r.join_referrals_weeks()
+    # referrers = r.join_referrals_weeks()
     retention = r.priority_retention()
-    users = r.priority_by_weeks(referrers)
-    r.count_circles(users)
+    # users = r.priority_by_weeks(retention)
+    r.count_circles(retention)
