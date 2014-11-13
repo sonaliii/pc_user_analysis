@@ -9,6 +9,8 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.cross_validation import cross_val_score
 from sklearn.cross_validation import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.grid_search import GridSearchCV
+from sklearn.metrics import confusion_matrix
 from sklearn.cluster import KMeans
 from sklearn.decomposition import NMF
 from collections import defaultdict
@@ -17,6 +19,7 @@ from nltk.corpus import stopwords
 import ast
 import base64
 import matplotlib
+from pylab import *
 import seaborn
 
 
@@ -29,9 +32,11 @@ class Facebook(object):
         self.comments = pd.read_csv('../data/comments.csv')
         self.captions = pd.read_csv('../data/captions.csv')
         r = Referrals()
-        referrers = r.count_referrals()
-        priority_users = r.identify_priority_users(referrers)
-        self.users = r.count_circles(priority_users)
+        # referrers = r.count_referrals()
+        referral_weeks = r.join_referrals_weeks()
+        priority_users = r.priority_by_weeks(referral_weeks)
+        priority_retention = r.priority_retention()
+        self.users = r.count_circles(priority_retention)
         self.vocab = []
         self.stop = stopwords.words('english')
         self.other_stop = ['lol', 'wtf', 'haha', 'hahaha', 'hahahaha', 'aww', 
@@ -152,11 +157,26 @@ class Facebook(object):
         y = y[['Priority']]
         return y
 
+
+    def grid_search(self, X, y):
+        X_train, X_test, y_train, y_test = train_test_split(X, y)
+        rf = RandomForestClassifier()
+        gs = GridSearchCV(rf, param_grid={'max_depth': [1,2,3,4,5,None], 'n_estimators': [20,50,100,120], 'n_jobs': [-1]})
+        gs.fit(X, y)
+        return gs.best_params_
+
     def build_model(self, X, y):
         #Random Forest model
         X_train, X_test, y_train, y_test = train_test_split(X, y)
         rf = RandomForestClassifier(max_depth = 3, n_estimators = 100, n_jobs = -1)
         model = rf.fit_transform(X_train, y_train)
+        y_pred = rf.predict(X_test)
+        y_probs = rf.predict_proba(X_test)[:, 1]
+        # print y_probs.describe()
+        # print y_probs.info()
+        print np.mean(y_probs), 'mean probs'
+        y_probs = y_probs >= 0.088
+        print confusion_matrix(y_test, y_probs)
         return rf, rf.score(X_test, y_test)
 
     def find_important_features(self, rf):
@@ -230,6 +250,7 @@ class Facebook(object):
             print(" ".join([feature_names[i]
                             for i in topic.argsort()[:-11:-1]]))
             print()
+        self.vocab = list(set(self.vocab))
 
     def tfidf_limited_vocab(self, fb_users):
         captions = self.captions
@@ -238,7 +259,7 @@ class Facebook(object):
         stop = self.stop + self.other_stop
 
         vectorizer = TfidfVectorizer(max_df=0.95, stop_words=stop, vocabulary=self.vocab)
-        model = vectorizer.transform(captions['caption'])
+        model = vectorizer.fit_transform(captions['caption'])
         model = pd.DataFrame(model.todense(), columns=vectorizer.get_feature_names())
         model = model.set_index(captions['user_id'])
         model = model.reset_index()
@@ -297,10 +318,11 @@ if __name__ == '__main__':
     # # n = fb.nm(tf2, tmodel2)
     # # print 'CAPTIONS'
 
+    # print fb.grid_search(X, y)
     model, score = fb.build_model(X, y)
     # # # print 'model built'
-    # important_cols = fb.find_important_features(model)
-    # print important_cols, 'important columns'
+    important_cols = fb.find_important_features(model)
+    print important_cols, 'important columns'
     print score, 'accuracy score'
-    # fb.priority_ratios(X, y)
+    fb.priority_ratios(X, y)
     # # print k, 'KMeans'
