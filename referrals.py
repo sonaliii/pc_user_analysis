@@ -31,6 +31,11 @@ class Referrals(object):
         summed.columns = ['UserID', 'Referrals']
         return summed
 
+    def priority_retention(self):
+        retention = self.weeks
+        retention['Priority'] = retention['weeks'].apply(lambda x: True if x >= 10 else False)
+        return retention
+
     def priority_by_weeks(self, referral_weeks_df):
         referrers = referral_weeks_df
         #Setting priority users to those who have referred at least 10 other users
@@ -111,5 +116,6 @@ class Referrals(object):
 if __name__=='__main__':
     r = Referrals()
     referrers = r.join_referrals_weeks()
+    retention = r.priority_retention()
     users = r.priority_by_weeks(referrers)
     r.count_circles(users)
