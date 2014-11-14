@@ -6,7 +6,7 @@ import facebook
 import json
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.cross_validation import cross_val_score
+from sklearn.cross_validation import KFold
 from sklearn.cross_validation import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.grid_search import GridSearchCV
@@ -136,19 +136,35 @@ class Facebook(object):
         binarized = pd.get_dummies(fb_users[str(col_name)])
         return binarized
 
+    def group_locales(self, locales):
+        others = []
+        for col in locales.columns:
+            total = np.sum(locales[col])
+            if total < 50:
+                others.append(col)
+
+        other = np.zeros(locales.shape[0])
+        for col in others:
+            other = other + locales[col]
+            locales = locales.drop(col, axis=1)
+
+        locales['other'] = other
+        return locales
+
+
     def only_users_with_X(self, fb_users, x):
         for feature in x:
             fb_users = fb_users[fb_users[feature] != -1]
         return fb_users
 
     def create_X(self, fb_users, locales, tftransformed):       
-        X = fb_users[['UserID', 'gender', 'Circles', 'has_circles']]
+        X = fb_users[['UserID', 'gender']]
         X = X.join(locales)
         X = X.merge(tftransformed, how='inner', left_on='UserID', right_on='UserID')
         # X = X.join(employers)
         # X = X.join(job_titles, rsuffix='_job')
         # X = X.join(hometowns, rsuffix='_ht')
-        X['Circles'] = X['Circles'].fillna(0)
+        # X['Circles'] = X['Circles'].fillna(0)
         X = X.drop('UserID', axis=1)
         # X = X.drop('user_id', axis=1)
         return X
@@ -167,6 +183,21 @@ class Facebook(object):
         gs.fit(X, y)
         return gs.best_params_
 
+    def kfold_cv(self, X, y):
+        kf = KFold(X.shape[0], n_folds=4, shuffle=True)
+        scores = []
+        X = np.array(X)
+
+        for train_index, test_index in kf:
+            y_train, y_test = y['Priority'][train_index], y['Priority'][test_index]
+            X_train, X_test = X[train_index], X[test_index]
+            rf = RandomForestClassifier(max_depth = 3, n_estimators = 100, n_jobs = -1)
+            model = rf.fit_transform(X_train, y_train)
+            y_pred = rf.predict(X_test)
+            scores.append(rf.score(X_test, y_test))
+
+        return np.mean(scores)
+
     def build_model(self, X, y):
         #Random Forest model
         X_train, X_test, y_train, y_test = train_test_split(X, y)
@@ -177,7 +208,7 @@ class Facebook(object):
         # print y_probs.describe()
         # print y_probs.info()
         print np.mean(y_probs), 'mean probs'
-        y_probs = y_probs >= 0.088
+        y_probs = y_probs >= 0.089426
         print confusion_matrix(y_test, y_pred)
         return rf, rf.score(X_test, y_test)
 
@@ -309,6 +340,7 @@ if __name__ == '__main__':
     fb_users = fb.binarize_gender(fb_users)
     fb_users = fb.only_users_with_X(fb_users, ['gender'])
     locales = fb.binarize_col(fb_users, 'locale')
+    locales = fb.group_locales(locales)
 
     # # tf, tmodel = fb.tfidf_comments(fb_users)
     tf2, tmodel2 = fb.tfidf_captions(fb_users)
@@ -321,12 +353,12 @@ if __name__ == '__main__':
     # k = fb.km(tf, tmodel)
     # # n = fb.nm(tf2, tmodel2)
     # # print 'CAPTIONS'
-
+    print fb.kfold_cv(X, y)
     # print fb.grid_search(X, y)
-    model, score = fb.build_model(X, y)
+    # model, score = fb.build_model(X, y)
     # # # print 'model built'
-    important_cols = fb.find_important_features(model)
-    print important_cols, 'important columns'
-    print score, 'accuracy score'
+    # important_cols = fb.find_important_features(model)
+    # print important_cols, 'important columns'
+    # print score, 'accuracy score'
     fb.priority_ratios(X, y)
     # # print k, 'KMeans'
