@@ -1,5 +1,4 @@
 import pandas as pd
-import base64
 
 lines = []
 with open('../data/captions.txt') as f:
