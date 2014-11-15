@@ -1,5 +1,8 @@
 import pandas as pd
 import sqlite3
+'''
+Imports SQLite database of comment text, groups by User ID, and saves to CSV
+'''
 
 #Connecting to SQLite Database and importing to Pandas dataframe
 con = sqlite3.connect('comments.sqlite')
