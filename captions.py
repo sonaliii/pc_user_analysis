@@ -1,5 +1,7 @@
 import pandas as pd
-
+'''
+Imports caption text data, groups by User ID, and saves to CSV
+'''
 lines = []
 with open('../data/captions.txt') as f:
   lines = f.readlines()
