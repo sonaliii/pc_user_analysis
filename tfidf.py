@@ -1,17 +1,21 @@
+import string
+
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
-import string
 from nltk.stem.porter import PorterStemmer
 from nltk.stem.snowball import SnowballStemmer
 from nltk.stem.wordnet import WordNetLemmatizer
 import nltk
 import numpy as np
+import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 
 
 class Tfidf(object):
     def __init__(self):
+        self.comments = pd.read_csv('../data/comments.csv')
+        self.captions = pd.read_csv('../data/captions.csv')
         self.other_stop = ['lol', 'wtf', 'haha', 'hahaha', 'hahahaha', 'aww', 
                    'awww', 'awwww', 'awwwww', 'omg', 'lmao', 'picture', 
                    'pic', 'photo', 'oh', 'yes', 'no', 'like', 'likes', 
@@ -26,29 +30,48 @@ class Tfidf(object):
                    'back', 'isn', 'ya', 'let', 'first', 'take', 'us',
                    'come', 'doe', 'pre', 'took', 'taking', 'ur']
     
-    def lower_case(self, text):
-        return text.lower().strip().strip('\n')
+    @property
+    def lower_case(self):
+        lowered = []
+        for caption in self.captions['caption']:
+          lowered.append(caption.lower().strip().strip('\n'))
+        return lowered
 
-    def remove_punc(self, text):
+    @property
+    def remove_punc(self):
+        text = self.lower_case
         exclude = set(string.punctuation)
-        text = ''.join(ch for ch in text if ch not in exclude)
-        return text
+        captions = []
+        for caption in text:
+            captions.append(''.join(ch for ch in text if ch not in exclude))
+        # text = ''.join(ch for ch in text if ch not in exclude)
+        return captions
         
-    def remove_unicode(self, text):
-        text = ''.join([char if ord(char) < 128 else ' ' for char in text])
-        return text
+    @property
+    def remove_unicode(self):
+        text = self.remove_punc
+        unicode_removed = []
+        for caption in text:
+            unicode_removed.append(''.join([char if ord(char) < 128 else ' ' for char in caption]))
+        return unicode_removed
 
-    def stop_removal(self, text):
-        stop = stopwords.words('english')
-        tokens = word_tokenize(text)
-        return [word for word in tokens if word not in stop]
+    @property
+    def stop_removal(self):
+        text = self.remove_unicode
+        stop = stopwords.words('english') + self.other_stop
+        tokenized = []
+        for word in text:
+          tokenized.append(word_tokenize(word))
+        return [word for word in tokenized if word not in stop]
 
-    def stemmer(self, text):
+    @property
+    def stemmer(self):
+        text = self.stop_removal
         snowball = SnowballStemmer('english')
         snowball_text = []
-        for article in text:
+        for caption in text:
             snowball_tokens = []
-            for token in article:
+            for token in caption:
                 snowball_tokens.append(snowball.stem(token))
             snowball_text.append(snowball_tokens)
         return snowball_text
@@ -61,23 +84,25 @@ class Tfidf(object):
         vocab = list(set(vocab))
         return vocab
 
+    @property
+    def vectorizer(self):
+        processed_text = self.stemmer
+        print processed_text[4]
+        tf = TfidfVectorizer(input = 'content', max_features=2000)
+        tf_matrix = tf.fit_transform(processed_text)
+        return tf, tf_matrix
 
 
-# articles_counts = []
-# for article in snowball_articles:
-#     article_counts = []
-#     for word in vocab:
-#         article_counts.append(article.count(word))
-#     articles_counts.append(article_counts)
+if __name__=='__main__':
+    tf = Tfidf()
+    tf.vectorizer()
+# processed_articles = []
 
-processed_articles = []
+# for article in list_of_articles:
+#     lowered = lower_case(article)
+#     punc_removed = remove_punc(lowered)
+#     unicode_removed = remove_unicode(punc_removed)
+#     stop_removed = stop_removal(unicode_removed)
+#     processed_articles.append(stop_removed)    
 
-for article in list_of_articles:
-    lowered = lower_case(article)
-    punc_removed = remove_punc(lowered)
-    unicode_removed = remove_unicode(punc_removed)
-    stop_removed = stop_removal(unicode_removed)
-    processed_articles.append(stop_removed)    
 
-tf = TfidfVectorizer(input = 'content', stop_words = 'english')
-tf_matrix = tf.fit_transform(processed_articles)
