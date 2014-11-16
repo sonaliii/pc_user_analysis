@@ -72,6 +72,7 @@ class Facebook(object):
         df = df[df['id'] != 0]
         return df
 
+    @property
     def load_all_fbs(self):
         '''
         Loads all Facebook data from list of filenames
@@ -82,11 +83,12 @@ class Facebook(object):
             dfs.append(df)
         return dfs
 
-    def merge_dfs(self, dfs):
+    @property
+    def merge_dfs(self):
         '''
         Merges all individual Facebook user dataframes into one dataframe
         '''
-        final_df = dfs[0]
+        final_df = load_all_fbs[0]
         for df in dfs[1:]:
             final_df = final_df.append(df)
         fb_users = final_df.drop_duplicates(cols='id')
@@ -314,17 +316,20 @@ class Facebook(object):
             decoded_ids.append(base64.b64decode(uid))
         comments['user_id'] = decoded_ids
 
-        comments = comments.merge(fb_users, how='left', left_on='user_id', right_on='UserID')
-        
+        comments = comments.merge(fb_users, how='left',
+                                  left_on='user_id',
+                                  right_on='UserID')
+
         stop = self.stop + self.other_stop
-        vectorizer = TfidfVectorizer(max_df=0.95, min_df=2, stop_words=stop, max_features=100)
+        vectorizer = TfidfVectorizer(max_df=0.95, min_df=2,
+                                     stop_words=stop,
+                                     max_features=100)
         model = vectorizer.fit_transform(comments['comment_text'])
         model = pd.DataFrame(model.todense(), columns=vectorizer.get_feature_names())
 
         model = model.set_index(comments['user_id'])
         model = model.reset_index()
         return vectorizer, model
-
 
     def tfidf_captions(self, fb_users):
         '''
@@ -388,24 +393,24 @@ class Facebook(object):
         labels = kmeans_model.labels_
         # silhouette = silhouette_score(transformed, labels, metric='euclidean')
         centroids = kmeans_model.cluster_centers_
-        
+
         #Find top 10 words for each cluster
         centroid_top_indices = []
         for centroid in centroids:
             centroid_sorted = np.array(centroid).argsort()[::-1]
             centroid_top_indices.append(centroid_sorted[0:10])
-            
+
         features = np.array(tf.get_feature_names())
         centroid_top_feats = []
         for centroid in centroid_top_indices:
             centroid_top_feats.append(features[centroid])
-            
+
         cluster_assignments = kmeans_model.fit_predict(transformed)
 
         clusters = defaultdict(list)
         for i, j in enumerate(cluster_assignments[0:32]):
-            clusters[j].append(i) 
-            
+            clusters[j].append(i)
+
         # for cluster in dict(clusters).iteritems():
         #     print cluster
         #     for item in cluster:
@@ -427,7 +432,7 @@ class Facebook(object):
         Returns:
             s    : silhouette value of each observation
         """
-        transformed = transformed.drop('UserID', axis = 1)
+        transformed = transformed.drop('UserID', axis=1)
         X = transformed
         cIDX = labels
 
@@ -438,29 +443,27 @@ class Facebook(object):
         D = squareform(pdist(X))
 
         # indices belonging to each cluster
-        kIndices = [np.flatnonzero(cIDX==k) for k in range(K)]
+        kIndices = [np.flatnonzero(cIDX == k) for k in range(K)]
 
         # compute a,b,s for each instance
         a = np.zeros(N)
         b = np.zeros(N)
         for i in range(N):
             # instances in same cluster other than instance itself
-            a[i] = np.mean( [D[i][ind] for ind in kIndices[cIDX[i]] if ind!=i] )
+            a[i] = np.mean([D[i][ind] for ind in kIndices[cIDX[i]] if ind != i])
             # instances in other clusters, one cluster at a time
-            b[i] = np.min( [np.mean(D[i][ind]) 
-                            for k,ind in enumerate(kIndices) if cIDX[i]!=k] )
-        s = (b-a)/np.maximum(a,b)
+            b[i] = np.min([np.mean(D[i][ind])
+                          for k, ind in enumerate(kIndices) if cIDX[i] != k])
+        s = (b - a)/np.maximum(a, b)
 
         return s
-
-
 
 if __name__ == '__main__':
     fb = Facebook()
     dfs = fb.load_all_fbs()
     fb_users = fb.merge_dfs(dfs)
 
-    fb_users = fb.combine_all_features(fb_users) 
+    fb_users = fb.combine_all_features(fb_users)
     fb_users = fb.dummy_gender(fb_users)
     fb_users = fb.only_users_with_X(fb_users, ['gender'])
     locales = fb.binarize_col(fb_users, 'locale')
