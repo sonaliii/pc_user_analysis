@@ -1,9 +1,12 @@
+import ast
+import base64
+import json
+
 import pandas as pd
 import numpy as np
 import requests
 from multiprocessing.dummy import Pool
 import facebook
-import json
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.cross_validation import KFold
@@ -14,13 +17,12 @@ from sklearn.metrics import confusion_matrix
 from sklearn.cluster import KMeans
 from sklearn.decomposition import NMF
 from collections import defaultdict
-from referrals import Referrals
 from nltk.corpus import stopwords
-import ast
-import base64
 import matplotlib
 from pylab import *
 import seaborn
+
+from referrals import Referrals
 
 
 class Facebook(object):
@@ -139,11 +141,11 @@ class Facebook(object):
     def group_locales(self, locales):
         others = []
         for col in locales.columns:
-            total = np.sum(locales[col])
-            if total < 50:
+            total = np.sum(locales[col][locales[col] == 1])
+            if total < 100:
                 others.append(col)
 
-        other = np.zeros(locales.shape[0])
+        other = np.zeros(len(locales['en_US']))
         for col in others:
             other = other + locales[col]
             locales = locales.drop(col, axis=1)
@@ -160,7 +162,7 @@ class Facebook(object):
     def create_X(self, fb_users, locales, tftransformed):       
         X = fb_users[['UserID', 'gender']]
         X = X.join(locales)
-        X = X.merge(tftransformed, how='inner', left_on='UserID', right_on='UserID')
+        # X = X.merge(tftransformed, how='inner', left_on='UserID', right_on='UserID')
         # X = X.join(employers)
         # X = X.join(job_titles, rsuffix='_job')
         # X = X.join(hometowns, rsuffix='_ht')
@@ -171,7 +173,7 @@ class Facebook(object):
 
     def create_y(self, fb_users, tftransformed):
         y = fb_users[['UserID', 'Priority']]
-        y = y.merge(tftransformed, how='inner', left_on='UserID', right_on='UserID')
+        # y = y.merge(tftransformed, how='inner', left_on='UserID', right_on='UserID')
         y = y[['Priority']]
         return y
 
@@ -193,7 +195,6 @@ class Facebook(object):
             X_train, X_test = X[train_index], X[test_index]
             rf = RandomForestClassifier(max_depth = 3, n_estimators = 100, n_jobs = -1)
             model = rf.fit_transform(X_train, y_train)
-            y_pred = rf.predict(X_test)
             scores.append(rf.score(X_test, y_test))
 
         return np.mean(scores)
@@ -207,9 +208,8 @@ class Facebook(object):
         y_probs = rf.predict_proba(X_test)[:, 1]
         # print y_probs.describe()
         # print y_probs.info()
-        print np.mean(y_probs), 'mean probs'
-        y_probs = y_probs >= 0.089426
-        print confusion_matrix(y_test, y_pred)
+        y_probs = y_probs >= 0.088
+        print confusion_matrix(y_test, y_probs)
         return rf, rf.score(X_test, y_test)
 
     def find_important_features(self, rf):
@@ -262,7 +262,6 @@ class Facebook(object):
     def tfidf_captions(self, fb_users):
         captions = self.captions
         captions = captions.merge(fb_users, how='left', left_on='user_id', right_on='UserID')
-        print captions.columns, 'caption columns'
         stop = self.stop + self.other_stop
         vectorizer = TfidfVectorizer(max_df=0.95, stop_words=stop, max_features=2000)
         model = vectorizer.fit_transform(captions['caption'])
@@ -361,4 +360,3 @@ if __name__ == '__main__':
     # print important_cols, 'important columns'
     # print score, 'accuracy score'
     fb.priority_ratios(X, y)
-    # # print k, 'KMeans'
