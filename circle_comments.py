@@ -1,7 +1,8 @@
 import pandas as pd
 import sqlite3
 '''
-Imports SQLite database of comment text, groups by circle/album, and saves to CSV
+Imports SQLite database of comment text,
+groups by circle/album, and saves to CSV
 '''
 con = sqlite3.connect('../../../../comments.sqlite')
 df = pd.read_sql("SELECT circle_id, comment_text FROM comments", con)

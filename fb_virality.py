@@ -30,32 +30,34 @@ from referrals import Referrals
 
 class Facebook(object):
     def __init__(self):
-        self.filenames = ['../data/fb.json', '../data/fb2.json', '../data/fb3.json', 
-            '../data/fb4.json', '../data/fb5.json', '../data/fb6.json', 
-            '../data/fb7.json', '../data/fb8.json', '../data/fb9.json', 
-            '../data/fb10.json']
+        self.filenames = ['../data/fb.json', '../data/fb2.json',
+                          '../data/fb3.json', '../data/fb4.json',
+                          '../data/fb5.json', '../data/fb6.json',
+                          '../data/fb7.json', '../data/fb8.json',
+                          '../data/fb9.json', '../data/fb10.json']
         self.comments = pd.read_csv('../data/comments.csv')
         self.captions = pd.read_csv('../data/captions.csv')
         r = Referrals()
         referral_weeks = r.join_referrals_weeks()
         priority_users = r.priority_by_weeks(referral_weeks)
         self.users = r.count_circles(priority_users)
-        
+
         self.vocab = []
         self.stop = stopwords.words('english')
-        self.other_stop = ['lol', 'wtf', 'haha', 'hahaha', 'hahahaha', 'aww', 
-                   'awww', 'awwww', 'awwwww', 'omg', 'lmao', 'picture', 
-                   'pic', 'photo', 'oh', 'yes', 'no', 'like', 'likes', 
-                   'look', 'looks', 'hahah', 'hahahah', 'hahahahah',
-                   'thanks', 'thank', 'you', 'ha', 'ah', 'please', 
-                   'wow', 'great', 'good', 'awesome', 'go', 'got', 'get',
-                   'yup', 'yep', 'yeah', 'really', 'one', 'think', 'hi',
-                   'hahahahaha', 'aw', 'so', 'soo', 'sooo', 'soooo',
-                   'tho', 'though', 'two', 'didn', 're', 've', 'way',
-                   'time', 'best', 'would', 'trying', 'room', 'day',
-                   'see', 'gotta', 'im', 'dat', 'hey', 'bae', 'much',
-                   'back', 'isn', 'ya', 'let', 'first', 'take', 'us',
-                   'come', 'doe', 'pre', 'took', 'taking', 'ur']
+        self.other_stop = ['lol', 'wtf', 'haha', 'hahaha', 'hahahaha', 'aww',
+                           'awww', 'awwww', 'awwwww', 'omg', 'lmao', 'picture',
+                           'pic', 'photo', 'oh', 'yes', 'no', 'like', 'likes',
+                           'look', 'looks', 'hahah', 'hahahah', 'hahahahah',
+                           'thanks', 'thank', 'you', 'ha', 'ah', 'please',
+                           'wow', 'great', 'good', 'awesome', 'go', 'got',
+                           'yup', 'yep', 'yeah', 'really', 'one', 'think',
+                           'hahahahaha', 'aw', 'so', 'soo', 'sooo', 'soooo',
+                           'tho', 'though', 'two', 'didn', 're', 've', 'way',
+                           'time', 'best', 'would', 'trying', 'room', 'day',
+                           'see', 'gotta', 'im', 'dat', 'hey', 'bae', 'much',
+                           'back', 'isn', 'ya', 'let', 'first', 'take', 'us',
+                           'come', 'doe', 'pre', 'took', 'taking', 'ur', 'get',
+                           'hi']
 
     def load_fb_data(self, filename):
         '''
@@ -138,12 +140,15 @@ class Facebook(object):
 
     def combine_all_features(self, df):
         '''
-        Combines all features from Facebook dataframes and selects final columns to use
+        Combines all features from Facebook dataframes
+        and selects final columns to use
         '''
         fb_users = self.users
-        fb_users = fb_users.merge(df, how='right', left_on='FacebookID', right_on='id')
+        fb_users = fb_users.merge(df, how='right',
+                                  left_on='FacebookID',
+                                  right_on='id')
         fb_users['name'] = fb_users['name'].fillna(-1)
-        
+
         #Selecting columns/features to return
         user_cols = list(self.users.columns)
         extra_cols = ['gender', 'name', 'locale']
@@ -166,7 +171,7 @@ class Facebook(object):
 
     def group_locales(self, locales):
         '''
-        Group locales with fewer than 100 users 
+        Group locales with fewer than 100 users
         '''
         others = []
         for col in locales.columns:
@@ -182,19 +187,18 @@ class Facebook(object):
         locales['other'] = other
         return locales
 
-
     def only_users_with_X(self, fb_users, x):
         '''
-        Select only users from the DataFrame with a given feature 
+        Select only users from the DataFrame with a given feature
         '''
         for feature in x:
             fb_users = fb_users[fb_users[feature] != -1]
         return fb_users
 
-    def create_X(self, fb_users, locales):  
+    def create_X(self, fb_users, locales):
         '''
         Creates X dataframe for model
-        '''     
+        '''
         X = fb_users[['gender']]
         X = X.join(locales)
         # X = X.merge(tftransformed, how='inner', left_on='UserID', right_on='UserID')
@@ -210,14 +214,14 @@ class Facebook(object):
         # y = y.merge(tftransformed, how='inner', left_on='UserID', right_on='UserID')
         return np.array(y).ravel()
 
-
     def grid_search(self, X, y):
         '''
         Grid Search for the best parameters for the given model
         '''
         X_train, X_test, y_train, y_test = train_test_split(X, y)
         rf = RandomForestClassifier()
-        gs = GridSearchCV(rf, param_grid={'max_depth': [1,2,3,4,5,None], 'n_estimators': [20,50,100,120], 'n_jobs': [-1]})
+        gs = GridSearchCV(rf, param_grid={'max_depth': [1, 2, 3, 4, 5, None],
+                          'n_estimators': [20, 50, 100, 120], 'n_jobs': [-1]})
         gs.fit(X, y)
         return gs.best_params_
 
@@ -233,7 +237,7 @@ class Facebook(object):
         for train_index, test_index in kf:
             y_train, y_test = y[train_index], y[test_index]
             X_train, X_test = X[train_index], X[test_index]
-            rf = RandomForestClassifier(max_depth = 3, n_estimators = 100, n_jobs = -1)
+            rf = RandomForestClassifier(max_depth=3, n_estimators=100, n_jobs=-1)
             model = rf.fit_transform(X_train, y_train)
             rf_pred = rf.predict(X_test)
             print confusion_matrix(y_test, rf_pred), 'random forest confusion matrix'
@@ -252,7 +256,7 @@ class Facebook(object):
         '''
         #Random Forest model
         X_train, X_test, y_train, y_test = train_test_split(X, y)
-        rf = RandomForestClassifier(max_depth = 3, n_estimators = 100, n_jobs = -1)
+        rf = RandomForestClassifier(max_depth=3, n_estimators=100, n_jobs=-1)
         model = rf.fit_transform(X_train, y_train)
         y_pred = rf.predict(X_test)
         y_probs = rf.predict_proba(X_test)[:, 1]
@@ -282,7 +286,7 @@ class Facebook(object):
             printout = col + '\t' + str(np.mean(y['Priority'][conditions])) + '\t\t\t\t(' + str(np.mean(y['Priority'][conditions]) * sum(X[col][conditions])) + '/' + str(sum(X[col][conditions])) + ')'
             print printout
             ratios.append(printout)
-        print 'male\t' + str(np.mean(y['Priority'][X['gender'] == 0])) 
+        print 'male\t' + str(np.mean(y['Priority'][X['gender'] == 0]))
         return ratios
 
     def plot_priority_ratios(self, X, y):
@@ -298,7 +302,7 @@ class Facebook(object):
             plt.bar([0, 1], [all_circles, priority_circles])
             plt.xticks([0.4, 1.4], ('Low Priority', 'High Priority'))
             plt.ylabel(col)
-            plt.title(col + ' by Low and High Priority Users');
+            plt.title(col + ' by Low and High Priority Users')
 
     def tfidf_comments(self, fb_users):
         '''
