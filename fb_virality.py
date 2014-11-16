@@ -88,7 +88,8 @@ class Facebook(object):
         '''
         Merges all individual Facebook user dataframes into one dataframe
         '''
-        final_df = load_all_fbs[0]
+        dfs = self.load_all_fbs
+        final_df = dfs[0]
         for df in dfs[1:]:
             final_df = final_df.append(df)
         fb_users = final_df.drop_duplicates(cols='id')
@@ -140,11 +141,13 @@ class Facebook(object):
         fb_users['hometowns'] = homes
         return fb_users
 
-    def combine_all_features(self, df):
+    @property
+    def combine_all_features(self):
         '''
         Combines all features from Facebook dataframes
         and selects final columns to use
         '''
+        df = self.merge_dfs
         fb_users = self.users
         fb_users = fb_users.merge(df, how='right',
                                   left_on='FacebookID',
@@ -156,25 +159,40 @@ class Facebook(object):
         extra_cols = ['gender', 'name', 'locale']
         return fb_users[user_cols + extra_cols]
 
-    def dummy_gender(self, fb_users):
+    @property
+    def dummy_gender(self):
         '''
         Create dummy variable out of gender (1 female, 0 male, -1 unidentified)
         '''
+        fb_users = self.combine_all_features
         fb_users['gender'] = fb_users['gender'].apply(lambda x: 1 if x == 'female' else 0 if x == 'male' else -1)
         return fb_users
 
-    def binarize_col(self, fb_users, col_name):
+    @property
+    def only_users_with_gender(self):
+        '''
+        Select only users from the DataFrame with a given feature
+        '''
+        fb_users = self.dummy_gender
+        fb_users = fb_users[fb_users['gender'] != -1]
+        return fb_users
+
+    @property
+    def binarize_locale(self):
         '''
         Binarize any given column to be used in machine learning model
         '''
         #Preparing and cleaning data for machine learning
-        binarized = pd.get_dummies(fb_users[str(col_name)])
+        fb_users = self.only_users_with_gender
+        binarized = pd.get_dummies(fb_users['locale'])
         return binarized
 
-    def group_locales(self, locales):
+    @property
+    def group_locales(self):
         '''
         Group locales with fewer than 100 users
         '''
+        locales = self.binarize_locale
         others = []
         for col in locales.columns:
             total = np.sum(locales[col][locales[col] == 1])
@@ -188,14 +206,6 @@ class Facebook(object):
 
         locales['other'] = other
         return locales
-
-    def only_users_with_X(self, fb_users, x):
-        '''
-        Select only users from the DataFrame with a given feature
-        '''
-        for feature in x:
-            fb_users = fb_users[fb_users[feature] != -1]
-        return fb_users
 
     def create_X(self, fb_users, locales):
         '''
@@ -460,15 +470,7 @@ class Facebook(object):
 
 if __name__ == '__main__':
     fb = Facebook()
-    dfs = fb.load_all_fbs()
-    fb_users = fb.merge_dfs(dfs)
-
-    fb_users = fb.combine_all_features(fb_users)
-    fb_users = fb.dummy_gender(fb_users)
-    fb_users = fb.only_users_with_X(fb_users, ['gender'])
-    locales = fb.binarize_col(fb_users, 'locale')
-    locales = fb.group_locales(locales)
-
+    fb_users = fb.only_users_with_gender
     tf, tmodel = fb.tfidf_comments(fb_users)
     tf2, tmodel2 = fb.tfidf_captions(fb_users)
     # n2 = fb.nm(tf2, tmodel2)
@@ -485,7 +487,6 @@ if __name__ == '__main__':
     # print lr_scores, 'LR score'
     # print fb.grid_search(X, y)
     # model, score = fb.build_rf(X, y)
-    # # # print 'model built'
     # important_cols = fb.find_important_features(model)
     # print important_cols, 'important columns'
     # print score, 'accuracy score'
