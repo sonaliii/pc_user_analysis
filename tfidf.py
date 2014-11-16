@@ -37,6 +37,7 @@ class Tfidf(object):
             lowered.append(caption.lower().strip().strip('\n'))
         return lowered
 
+    #Computer runs out of memory in remove_punc
     @property
     def remove_punc(self):
         text = self.lower_case
@@ -95,7 +96,8 @@ class Tfidf(object):
 
 if __name__ == '__main__':
     tf = Tfidf()
-    tf.vectorizer()
+    # tf.vectorizer()
+    print tf.remove_punc[380]
 # processed_articles = []
 
 # for article in list_of_articles:
