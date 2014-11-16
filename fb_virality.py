@@ -1,26 +1,31 @@
+import ast
+import base64
+import json
+from collections import defaultdict
+
 import pandas as pd
 import numpy as np
 import requests
 from multiprocessing.dummy import Pool
 import facebook
-import json
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.cross_validation import KFold
 from sklearn.cross_validation import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics import silhouette_score
 from sklearn.grid_search import GridSearchCV
 from sklearn.metrics import confusion_matrix
 from sklearn.cluster import KMeans
+from sklearn.linear_model import LogisticRegression
 from sklearn.decomposition import NMF
-from collections import defaultdict
-from referrals import Referrals
+from scipy.spatial.distance import pdist, squareform
 from nltk.corpus import stopwords
-import ast
-import base64
 import matplotlib
 from pylab import *
 import seaborn
+
+from referrals import Referrals
 
 
 class Facebook(object):
@@ -32,7 +37,6 @@ class Facebook(object):
         self.comments = pd.read_csv('../data/comments.csv')
         self.captions = pd.read_csv('../data/captions.csv')
         r = Referrals()
-        # referrers = r.count_referrals()
         referral_weeks = r.join_referrals_weeks()
         priority_users = r.priority_by_weeks(referral_weeks)
         self.users = r.count_circles(priority_users)
@@ -54,6 +58,10 @@ class Facebook(object):
                    'come', 'doe', 'pre', 'took', 'taking', 'ur']
 
     def load_fb_data(self, filename):
+        '''
+        Loads Facebook data from a given file into a pandas DataFrame.
+        Replaces NA's with 0 for ID values
+        '''
         f = open(filename, 'r')
         data = json.load(f)
         df = pd.DataFrame(data)
@@ -63,6 +71,9 @@ class Facebook(object):
         return df
 
     def load_all_fbs(self):
+        '''
+        Loads all Facebook data from list of filenames
+        '''
         dfs = []
         for f in self.filenames:
             df = self.load_fb_data(f)
@@ -70,6 +81,9 @@ class Facebook(object):
         return dfs
 
     def merge_dfs(self, dfs):
+        '''
+        Merges all individual Facebook user dataframes into one dataframe
+        '''
         final_df = dfs[0]
         for df in dfs[1:]:
             final_df = final_df.append(df)
@@ -77,6 +91,10 @@ class Facebook(object):
         return fb_users
 
     def extract_work_info(self, fb_users):
+        '''
+        Extracts Facebook user work information from the DataFrame.
+        Pulls out the first listed employer and position for each person.
+        '''
         works = fb_users['work'].fillna("[{'position': {'name': 'None'}, 'employer': {'name': 'None'}}]")
         works = list(works)
         job_titles = []
@@ -105,6 +123,10 @@ class Facebook(object):
         return fb_users
 
     def extract_hometown_info(self, fb_users):
+        '''
+        Extracts Facebook user hometown information from DataFrame
+        Replaces missing hometowns with "None"
+        '''
         hometowns = list(fb_users['hometown'].fillna("{'name': 'None'}"))
         homes = []
         for hometown in hometowns:
@@ -115,7 +137,9 @@ class Facebook(object):
         return fb_users
 
     def combine_all_features(self, df):
-        
+        '''
+        Combines all features from Facebook dataframes and selects final columns to use
+        '''
         fb_users = self.users
         fb_users = fb_users.merge(df, how='right', left_on='FacebookID', right_on='id')
         fb_users['name'] = fb_users['name'].fillna(-1)
@@ -125,17 +149,25 @@ class Facebook(object):
         extra_cols = ['gender', 'name', 'locale']
         return fb_users[user_cols + extra_cols]
 
-    def binarize_gender(self, fb_users):
+    def dummy_gender(self, fb_users):
+        '''
+        Create dummy variable out of gender (1 female, 0 male, -1 unidentified)
+        '''
         fb_users['gender'] = fb_users['gender'].apply(lambda x: 1 if x == 'female' else 0 if x == 'male' else -1)
         return fb_users
 
     def binarize_col(self, fb_users, col_name):
-        
+        '''
+        Binarize any given column to be used in machine learning model
+        '''
         #Preparing and cleaning data for machine learning
         binarized = pd.get_dummies(fb_users[str(col_name)])
         return binarized
 
     def group_locales(self, locales):
+        '''
+        Group locales with fewer than 100 users 
+        '''
         others = []
         for col in locales.columns:
             total = np.sum(locales[col][locales[col] == 1])
@@ -152,26 +184,37 @@ class Facebook(object):
 
 
     def only_users_with_X(self, fb_users, x):
+        '''
+        Select only users from the DataFrame with a given feature 
+        '''
         for feature in x:
             fb_users = fb_users[fb_users[feature] != -1]
         return fb_users
 
-    def create_X(self, fb_users, locales, tftransformed):       
-        X = fb_users[['UserID', 'gender']]
+    def create_X(self, fb_users, locales):  
+        '''
+        Creates X dataframe for model
+        '''     
+        X = fb_users[['gender']]
         X = X.join(locales)
-        X = X.merge(tftransformed, how='inner', left_on='UserID', right_on='UserID')
+        # X = X.merge(tftransformed, how='inner', left_on='UserID', right_on='UserID')
         # X['Circles'] = X['Circles'].fillna(0)
-        X = X.drop('UserID', axis=1)
+        # X = X.drop('UserID', axis=1)
         return X
 
-    def create_y(self, fb_users, tftransformed):
-        y = fb_users[['UserID', 'Priority']]
-        y = y.merge(tftransformed, how='inner', left_on='UserID', right_on='UserID')
-        y = y[['Priority']]
-        return y
+    def create_y(self, fb_users):
+        '''
+        Creates y vector for model
+        '''
+        y = fb_users[['Priority']].fillna(0)
+        # y = y.merge(tftransformed, how='inner', left_on='UserID', right_on='UserID')
+        return np.array(y).ravel()
 
 
     def grid_search(self, X, y):
+        '''
+        Grid Search for the best parameters for the given model
+        '''
         X_train, X_test, y_train, y_test = train_test_split(X, y)
         rf = RandomForestClassifier()
         gs = GridSearchCV(rf, param_grid={'max_depth': [1,2,3,4,5,None], 'n_estimators': [20,50,100,120], 'n_jobs': [-1]})
@@ -179,20 +222,34 @@ class Facebook(object):
         return gs.best_params_
 
     def kfold_cv(self, X, y):
-        kf = KFold(len(y['Priority']), n_folds=4)
+        '''
+        KFold Cross Validation for Random Forest and Logistic Regression
+        '''
+        X = np.array(X)
+        kf = KFold(X.shape[0], n_folds=4)
         scores = []
+        lr_scores = []
 
         for train_index, test_index in kf:
-            y_train, y_test = y['Priority'][train_index], y['Priority'][test_index]
+            y_train, y_test = y[train_index], y[test_index]
             X_train, X_test = X[train_index], X[test_index]
             rf = RandomForestClassifier(max_depth = 3, n_estimators = 100, n_jobs = -1)
             model = rf.fit_transform(X_train, y_train)
-            y_pred = rf.predict(X_test)
-            scores.append(f.score(X_test, y_test))
+            rf_pred = rf.predict(X_test)
+            print confusion_matrix(y_test, rf_pred), 'random forest confusion matrix'
+            scores.append(rf.score(X_test, y_test))
+            lr = LogisticRegression()
+            model = lr.fit_transform(X_train, y_train)
+            lr_pred = lr.predict(X_test)
+            print confusion_matrix(y_test, lr_pred), 'logistic regression confusion matrix'
+            lr_scores.append(lr.score(X_test, y_test))
 
-        return np.mean(scores)
+        return np.mean(scores), np.mean(lr_scores)
 
-    def build_model(self, X, y):
+    def build_rf(self, X, y):
+        '''
+        Builds random forest model
+        '''
         #Random Forest model
         X_train, X_test, y_train, y_test = train_test_split(X, y)
         rf = RandomForestClassifier(max_depth = 3, n_estimators = 100, n_jobs = -1)
@@ -202,17 +259,23 @@ class Facebook(object):
         # print y_probs.describe()
         # print y_probs.info()
         print X.columns, 'X columns'
+        print np.mean(y_probs), 'mean probs'
         y_probs = y_probs >= 0.054
-        print confusion_matrix(y_test, y_probs)
+        print confusion_matrix(y_test, y_pred)
         return rf, rf.score(X_test, y_test)
 
     def find_important_features(self, rf):
-        #Identifying top 10 most important features
+        '''
+        Selects the top 20 most important features from the random forest classifier
+        '''
         feature_indices = np.argsort(rf.feature_importances_)[::-1][:20]
         important_cols = X.columns[feature_indices]
         return important_cols
 
     def priority_ratios(self, X, y):
+        '''
+        Priority ratios (how many people from each category are considered "Priority" users)
+        '''
         ratios = []
         for col in X.columns:
             conditions = X[col] == 1
@@ -223,6 +286,9 @@ class Facebook(object):
         return ratios
 
     def plot_priority_ratios(self, X, y):
+        '''
+        Plotting priority ratios
+        '''
         for i, col in enumerate(X.columns):
             priority_circles = mean(X[col][y['Priority'] == True])
             all_circles = mean(X[col][y['Priority'] == False])
@@ -235,6 +301,9 @@ class Facebook(object):
             plt.title(col + ' by Low and High Priority Users');
 
     def tfidf_comments(self, fb_users):
+        '''
+        TF-IDF analysis on photo comment text
+        '''
         comments = self.comments
         decoded_ids = []
         for uid in comments['user_id']:
@@ -254,9 +323,11 @@ class Facebook(object):
 
 
     def tfidf_captions(self, fb_users):
+        '''
+        TF-IDF analysis on photo caption text
+        '''
         captions = self.captions
         captions = captions.merge(fb_users, how='left', left_on='user_id', right_on='UserID')
-        print captions.columns, 'caption columns'
         stop = self.stop + self.other_stop
         vectorizer = TfidfVectorizer(max_df=0.95, stop_words=stop, max_features=2000)
         model = vectorizer.fit_transform(captions['caption'])
@@ -266,11 +337,14 @@ class Facebook(object):
         return vectorizer, model
 
     def nm(self, tf, transformed):
+        '''
+        Non-negative matrix factorization for TF-IDF transformed text
+        '''
         # transformed = transformed.drop('user_id', axis=1)
         transformed = transformed.drop('UserID', axis=1)
 
         #Non-negative matrix factorization (clustering)
-        nmf = NMF(n_components=10).fit(transformed)
+        nmf = NMF(n_components=20).fit(transformed)
         feature_names = tf.get_feature_names()
         self.vocab = []
         for topic_idx, topic in enumerate(nmf.components_):
@@ -280,8 +354,12 @@ class Facebook(object):
                             for i in topic.argsort()[:-11:-1]]))
             print()
         self.vocab = list(set(self.vocab))
+        return nmf.reconstruction_err_
 
     def tfidf_limited_vocab(self, fb_users):
+        '''
+        Uses only a limited vocabulary of top most important text features for TF-IDF
+        '''
         captions = self.captions
         captions = captions.merge(fb_users, how='left', left_on='user_id', right_on='UserID')
 
@@ -295,10 +373,17 @@ class Facebook(object):
         return vectorizer, model
 
     def km(self, tf, transformed):
+        '''
+        KMeans clustering of TF-IDF transformed text
+        '''
         #KMeans (also clustering)
-        km = KMeans(n_clusters=6)
-        kmean = km.fit_transform(transformed)
-        centroids = km.cluster_centers_
+        transformed = transformed.drop('UserID', axis=1)
+        # kmean = kmeans_model.fit_transform(transformed)
+        kmeans_model = KMeans(n_clusters=10, random_state=1).fit(transformed)
+        kmean = kmeans_model.transform(transformed)
+        labels = kmeans_model.labels_
+        # silhouette = silhouette_score(transformed, labels, metric='euclidean')
+        centroids = kmeans_model.cluster_centers_
         
         #Find top 10 words for each cluster
         centroid_top_indices = []
@@ -311,7 +396,7 @@ class Facebook(object):
         for centroid in centroid_top_indices:
             centroid_top_feats.append(features[centroid])
             
-        cluster_assignments = km.fit_predict(transformed)
+        cluster_assignments = kmeans_model.fit_predict(transformed)
 
         clusters = defaultdict(list)
         for i, j in enumerate(cluster_assignments[0:32]):
@@ -321,7 +406,48 @@ class Facebook(object):
         #     print cluster
         #     for item in cluster:
         #         print self.comments['comment_text'][item]
-        return centroid_top_feats
+        return centroid_top_feats, labels
+
+    def silhouette(self, transformed, labels):
+        """
+        Computes the silhouette score for each instance of a clustered dataset,
+        which is defined as:
+            s(i) = (b(i)-a(i)) / max{a(i),b(i)}
+        with:
+            -1 <= s(i) <= 1
+
+        Args:
+            X    : A M-by-N array of M observations in N dimensions
+            cIDX : array of len M containing cluster indices (starting from zero)
+
+        Returns:
+            s    : silhouette value of each observation
+        """
+        transformed = transformed.drop('UserID', axis = 1)
+        X = transformed
+        cIDX = labels
+
+        N = X.shape[0]              # number of instances
+        K = len(np.unique(cIDX))    # number of clusters
+
+        # compute pairwise distance matrix
+        D = squareform(pdist(X))
+
+        # indices belonging to each cluster
+        kIndices = [np.flatnonzero(cIDX==k) for k in range(K)]
+
+        # compute a,b,s for each instance
+        a = np.zeros(N)
+        b = np.zeros(N)
+        for i in range(N):
+            # instances in same cluster other than instance itself
+            a[i] = np.mean( [D[i][ind] for ind in kIndices[cIDX[i]] if ind!=i] )
+            # instances in other clusters, one cluster at a time
+            b[i] = np.min( [np.mean(D[i][ind]) 
+                            for k,ind in enumerate(kIndices) if cIDX[i]!=k] )
+        s = (b-a)/np.maximum(a,b)
+
+        return s
 
 
 
@@ -331,27 +457,31 @@ if __name__ == '__main__':
     fb_users = fb.merge_dfs(dfs)
 
     fb_users = fb.combine_all_features(fb_users) 
-    fb_users = fb.binarize_gender(fb_users)
+    fb_users = fb.dummy_gender(fb_users)
     fb_users = fb.only_users_with_X(fb_users, ['gender'])
     locales = fb.binarize_col(fb_users, 'locale')
     locales = fb.group_locales(locales)
 
-    # # tf, tmodel = fb.tfidf_comments(fb_users)
+    tf, tmodel = fb.tfidf_comments(fb_users)
     tf2, tmodel2 = fb.tfidf_captions(fb_users)
-    n2 = fb.nm(tf2, tmodel2)
-    tf_ltd, tmodel_ltd = fb.tfidf_limited_vocab(fb_users)
-    X = fb.create_X(fb_users, locales, tmodel_ltd)
-    # # print X.shape
-    y = fb.create_y(fb_users, tmodel_ltd)
-    # # print y.shape
-    # k = fb.km(tf, tmodel)
-    # # n = fb.nm(tf2, tmodel2)
+    # n2 = fb.nm(tf2, tmodel2)
+    # tf_ltd, tmodel_ltd = fb.tfidf_limited_vocab(fb_users)
+    # X = fb.create_X(fb_users, locales)
 
+    # y = fb.create_y(fb_users)
+
+    # k, labels = fb.km(tf2, tmodel2)
+    n = fb.nm(tf2, tmodel2)
+    print n, 'reconstruction error'
+    # rf_scores, lr_scores = fb.kfold_cv(X, y)
+    # print rf_scores, 'RF score'
+    # print lr_scores, 'LR score'
     # print fb.grid_search(X, y)
-    model, score = fb.build_model(X, y)
+    # model, score = fb.build_rf(X, y)
     # # # print 'model built'
     # important_cols = fb.find_important_features(model)
     # print important_cols, 'important columns'
-    print score, 'accuracy score'
+    # print score, 'accuracy score'
     # fb.priority_ratios(X, y)
-    # # print k, 'KMeans'
+    # print k, 'KMeans'
+    # print np.mean(fb.silhouette(tmodel2, labels)), 'mean silhouette score'
