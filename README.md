@@ -14,3 +14,5 @@ Getting Started:
 - captions.py: imports photo caption text and groups by user
 - referrals.py: imports user referral data (who invited whom to the app)
 - fb.py: imports facebook data; combines with text from captions and comments; random forest
+- fb_virality.py: predicts user virality using various features; random forest
+- fb_retention.py: predicts user retention using various features; logistic regression
