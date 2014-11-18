@@ -5,26 +5,19 @@ from collections import defaultdict
 
 import pandas as pd
 import numpy as np
-import requests
-from multiprocessing.dummy import Pool
-import facebook
+from sklearn.grid_search import GridSearchCV
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.ensemble import GradientBoostingClassifier
-from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.linear_model import LogisticRegression
 from sklearn.cross_validation import KFold
 from sklearn.cross_validation import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics import silhouette_score
-from sklearn.grid_search import GridSearchCV
 from sklearn.metrics import confusion_matrix
-from sklearn.cluster import KMeans
-from sklearn.linear_model import LogisticRegression
 from sklearn.decomposition import NMF
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score
 from scipy.spatial.distance import pdist, squareform
 from nltk.corpus import stopwords
 import matplotlib.pyplot as plt
-from pylab import *
 import seaborn
 
 from referrals import Referrals

@@ -2,14 +2,7 @@ import json
 
 import pandas as pd
 import numpy as np
-import requests
-from multiprocessing.dummy import Pool
-import facebook
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.cross_validation import cross_val_score
-from sklearn.cross_validation import train_test_split
-import matplotlib
+import matplotlib.pyplot as plt
 import seaborn
 
 # %pylab inline
@@ -60,8 +53,8 @@ class Referrals(object):
 
     def priority_by_weeks(self, referral_weeks_df):
         referrers = referral_weeks_df
-        #Setting priority users to those who have referred at least 10 other users
-        referrers['Priority'] = referrers['Referrals'].apply(lambda x: x >= 80)
+        #Setting priority users to those who have referred at least 52 weeks of app use
+        referrers['Priority'] = referrers['Referrals'].apply(lambda x: x >= 52)
 
         #Merging all users with those who have referred others
         users = self.user_df.merge(referrers, how='outer', left_on='UserID', right_on='UserID')

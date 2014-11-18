@@ -5,11 +5,8 @@ from collections import defaultdict
 
 import pandas as pd
 import numpy as np
-import requests
-from multiprocessing.dummy import Pool
-import facebook
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.cross_validation import KFold
 from sklearn.cross_validation import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -17,7 +14,6 @@ from sklearn.metrics import silhouette_score
 from sklearn.grid_search import GridSearchCV
 from sklearn.metrics import confusion_matrix
 from sklearn.cluster import KMeans
-from sklearn.linear_model import LogisticRegression
 from sklearn.decomposition import NMF
 from scipy.spatial.distance import pdist, squareform
 from nltk.corpus import stopwords
@@ -38,6 +34,7 @@ class Facebook(object):
         self.comments = pd.read_csv('../data/comments.csv')
         self.captions = pd.read_csv('../data/captions.csv')
         r = Referrals()
+        retention = r.priority_retention()
         referral_weeks = r.join_referrals_weeks()
         priority_users = r.priority_by_weeks(referral_weeks)
         self.users = r.count_circles(priority_users)
@@ -207,23 +204,22 @@ class Facebook(object):
         locales['other'] = other
         return locales
 
-    def create_X(self, fb_users, locales):
+    def create_X(self, fb_users):
         '''
         Creates X dataframe for model
         '''
+        locales = self.group_locales
         X = fb_users[['gender']]
         X = X.join(locales)
-        # X = X.merge(tftransformed, how='inner', left_on='UserID', right_on='UserID')
-        # X['Circles'] = X['Circles'].fillna(0)
-        # X = X.drop('UserID', axis=1)
         return X
 
     def create_y(self, fb_users):
         '''
         Creates y vector for model
         '''
-        y = fb_users[['Priority']].fillna(0)
+        y = fb_users[['Referrals']].fillna(0)
         # y = y.merge(tftransformed, how='inner', left_on='UserID', right_on='UserID')
+        print np.mean(y), 'mean y'
         return np.array(y).ravel()
 
     def grid_search(self, X, y):
@@ -243,24 +239,17 @@ class Facebook(object):
         '''
         X = np.array(X)
         kf = KFold(X.shape[0], n_folds=4)
-        scores = []
-        lr_scores = []
+        gb_scores = []
 
         for train_index, test_index in kf:
             y_train, y_test = y[train_index], y[test_index]
             X_train, X_test = X[train_index], X[test_index]
-            rf = RandomForestClassifier(max_depth=3, n_estimators=100, n_jobs=-1)
-            model = rf.fit_transform(X_train, y_train)
-            rf_pred = rf.predict(X_test)
-            print confusion_matrix(y_test, rf_pred), 'random forest confusion matrix'
-            scores.append(rf.score(X_test, y_test))
-            lr = LogisticRegression()
-            model = lr.fit_transform(X_train, y_train)
-            lr_pred = lr.predict(X_test)
-            print confusion_matrix(y_test, lr_pred), 'logistic regression confusion matrix'
-            lr_scores.append(lr.score(X_test, y_test))
+            gb = GradientBoostingRegressor()
+            gbmodel = gb.fit_transform(X_train, y_train)
+            gb_pred = gb.predict(X_test)
+            gb_scores.append(gb.score(X_test, y_test))
 
-        return np.mean(scores), np.mean(lr_scores)
+        return np.mean(gb_scores)
 
     def build_rf(self, X, y):
         '''
@@ -272,8 +261,6 @@ class Facebook(object):
         model = rf.fit_transform(X_train, y_train)
         y_pred = rf.predict(X_test)
         y_probs = rf.predict_proba(X_test)[:, 1]
-        # print y_probs.describe()
-        # print y_probs.info()
         print X.columns, 'X columns'
         print np.mean(y_probs), 'mean probs'
         y_probs = y_probs >= 0.054
@@ -398,10 +385,10 @@ class Facebook(object):
         #KMeans (also clustering)
         transformed = transformed.drop('UserID', axis=1)
         # kmean = kmeans_model.fit_transform(transformed)
-        kmeans_model = KMeans(n_clusters=10, random_state=1).fit(transformed)
+        kmeans_model = KMeans(n_clusters=20, random_state=1).fit(transformed)
         kmean = kmeans_model.transform(transformed)
         labels = kmeans_model.labels_
-        # silhouette = silhouette_score(transformed, labels, metric='euclidean')
+        silhouette = silhouette_score(transformed, labels, metric='euclidean')
         centroids = kmeans_model.cluster_centers_
 
         #Find top 10 words for each cluster
@@ -425,7 +412,7 @@ class Facebook(object):
         #     print cluster
         #     for item in cluster:
         #         print self.comments['comment_text'][item]
-        return centroid_top_feats, labels
+        return centroid_top_feats, silhouette
 
     def silhouette(self, transformed, labels):
         """
@@ -471,18 +458,17 @@ class Facebook(object):
 if __name__ == '__main__':
     fb = Facebook()
     fb_users = fb.only_users_with_gender
-    tf, tmodel = fb.tfidf_comments(fb_users)
-    tf2, tmodel2 = fb.tfidf_captions(fb_users)
+    # tf, tmodel = fb.tfidf_comments(fb_users)
+    # tf2, tmodel2 = fb.tfidf_captions(fb_users)
     # n2 = fb.nm(tf2, tmodel2)
     # tf_ltd, tmodel_ltd = fb.tfidf_limited_vocab(fb_users)
-    # X = fb.create_X(fb_users, locales)
-
-    # y = fb.create_y(fb_users)
-
-    # k, labels = fb.km(tf2, tmodel2)
-    n = fb.nm(tf2, tmodel2)
-    print n, 'reconstruction error'
-    # rf_scores, lr_scores = fb.kfold_cv(X, y)
+    X = fb.create_X(fb_users)
+    y = fb.create_y(fb_users)
+    # k, silhouette = fb.km(tf2, tmodel2)
+    # n = fb.nm(tf2, tmodel2)
+    # print n, 'reconstruction error'
+    gb_scores = fb.kfold_cv(X, y)
+    print gb_scores, 'gb score'
     # print rf_scores, 'RF score'
     # print lr_scores, 'LR score'
     # print fb.grid_search(X, y)
