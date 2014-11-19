@@ -55,6 +55,7 @@ class Facebook(object):
                            'back', 'isn', 'ya', 'let', 'first', 'take', 'us',
                            'come', 'doe', 'pre', 'took', 'taking', 'ur', 'get',
                            'hi']
+        self.tests = []
 
     def load_fb_data(self, filename):
         '''
@@ -172,7 +173,6 @@ class Facebook(object):
         '''
         fb_users = self.dummy_gender
         fb_users = fb_users[fb_users['gender'] != -1]
-        print fb_users.shape
         return fb_users
 
     @property
@@ -213,7 +213,6 @@ class Facebook(object):
         X = fb_users[['gender', 'UserID']]
         X = X.join(locales)
         X = X.merge(tftransformed, how='inner', left_on='UserID', right_on='UserID')
-        # X['Circles'] = X['Circles'].fillna(0)
         X = X.drop('UserID', axis=1)
         return X
 
@@ -226,6 +225,34 @@ class Facebook(object):
         y = y['Priority']
         return np.array(y).ravel()
 
+    @property
+    def create_test_users(self):
+        a = [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 'wedding bride groom rehearsal ceremony']
+        b = [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 'wedding bride groom rehearsal ceremony']
+        c = [1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 'wedding bride groom rehearsal ceremony']
+        d = [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 'wedding bride groom rehearsal ceremony']
+        e = [1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 'wedding bride groom rehearsal ceremony']
+        f = [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 'wedding bride groom rehearsal ceremony']
+        a_b = [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 'baby loves mommy daddy weeks old sleepy']
+        b_b = [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 'baby loves mommy daddy weeks old sleepy']
+        c_b = [1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 'baby loves mommy daddy weeks old sleepy']
+        d_b = [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 'baby loves mommy daddy weeks old sleepy']
+        e_b = [1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 'baby loves mommy daddy weeks old sleepy']
+        f_b = [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 'baby loves mommy daddy weeks old sleepy']
+        tests = pd.DataFrame([a, b, c, d, e, f, a_b, b_b, c_b, d_b, e_b, f_b])
+        tests.columns = ['gender', 'de_DE', 'en_GB', 'en_US', 'es_ES',
+                         'es_LA', 'fr_FR', 'it_IT', 'pt_BR', 'sv_SE',
+                         'th_TH', 'zh_TW', 'other', 'caption']
+
+        self.tests = tests
+        return tests
+
+    def create_test_X(self, test_users, test_transformed):
+        test_users = test_users.drop('caption', axis=1)
+        test_X = test_users.join(test_transformed)
+        self.test_X = test_X
+        return test_X
+
     def grid_search(self, X, y):
         '''
         Grid Search for the best parameters for the given model
@@ -237,28 +264,32 @@ class Facebook(object):
         gs.fit(X, y)
         return gs.best_params_
 
-    def kfold_cv(self, X, y):
+    def kfold_cv(self, X, y, test_users_X):
         '''
         KFold Cross Validation for Random Forest and Logistic Regression
         '''
         X = np.array(X)
         kf = KFold(X.shape[0], n_folds=4)
         lr_scores = []
-
+        highest = 0
+        highest_ix = 0
+        highest_cols = []
         for train_index, test_index in kf:
             y_train, y_test = y[train_index], y[test_index]
             X_train, X_test = X[train_index], X[test_index]
             lr = LogisticRegression()
             lr_model = lr.fit_transform(X_train, y_train)
-            lr_pred = lr.predict(X_test)
+            lr_test_pred = lr.predict_proba(X_test)
+            top_ten = np.argsort(lr_test_pred[:, 1])[:-10:-1]
+            if lr_test_pred[:, 1][top_ten][0] > highest:
+                highest = lr_test_pred[:, 1][top_ten][0]
+                highest_ix = top_ten[0]
+                highest_cols = X[top_ten[0], :] > 0
+                print highest_cols
             lr_scores.append(lr.score(X_test, y_test))
+            lr_pred = lr.predict(X_test)
             print confusion_matrix(y_test, lr_pred), 'logistic regression classifier'
-            rf = RandomForestClassifier(max_depth=3, n_estimators=100, n_jobs=-1)
-            model = rf.fit_transform(X_train, y_train)
-            rf_pred = rf.predict(X_test)
-            print confusion_matrix(y_test, rf_pred), 'random forest confusion matrix'
-
-        return np.mean(lr_scores)
+        return np.mean(lr_scores), lr_test_pred, highest_ix, highest_cols
 
     def build_rf(self, X, y):
         '''
@@ -270,10 +301,6 @@ class Facebook(object):
         model = rf.fit_transform(X_train, y_train)
         y_pred = rf.predict(X_test)
         y_probs = rf.predict_proba(X_test)[:, 1]
-        # print y_probs.describe()
-        # print y_probs.info()
-        print X.columns, 'X columns'
-        print np.mean(y_probs), 'mean probs'
         y_probs = y_probs >= 0.054
         print confusion_matrix(y_test, y_pred)
         return rf, rf.score(X_test, y_test)
@@ -351,7 +378,9 @@ class Facebook(object):
         model = pd.DataFrame(model.todense(), columns=vectorizer.get_feature_names())
         model = model.set_index(captions['UserID'])
         model = model.reset_index()
-        return vectorizer, model
+        test_transformed = vectorizer.transform(self.tests['caption'])
+        test_transformed = pd.DataFrame(test_transformed.todense(), columns=vectorizer.get_feature_names())
+        return vectorizer, model, test_transformed
 
     def nm(self, tf, transformed):
         '''
@@ -469,26 +498,15 @@ class Facebook(object):
 if __name__ == '__main__':
     fb = Facebook()
     fb_users = fb.only_users_with_gender
-    # tf, tmodel = fb.tfidf_comments(fb_users)
-    tf2, tmodel2 = fb.tfidf_captions(fb_users)
-    # n2 = fb.nm(tf2, tmodel2)
-    # tf_ltd, tmodel_ltd = fb.tfidf_limited_vocab(fb_users)
-    X = fb.create_X(fb_users, tmodel2)
-    y = fb.create_y(fb_users, tmodel2)
-    print X.shape
-    print len(y)
-    # plt.plot(X, y)
-    # plt.show()
-    # k, silhouette = fb.km(tf2, tmodel2)
-    # n = fb.nm(tf2, tmodel2)
-    # print n, 'reconstruction error'
-    gb = fb.kfold_cv(X, y)
-    print gb, 'gb score'
-    # print fb.grid_search(X, y)
-    # model, score = fb.build_rf(X, y)
-    # important_cols = fb.find_important_features(model)
-    # print important_cols, 'important columns'
-    # print score, 'accuracy score'
-    # fb.priority_ratios(X, y)
-    # print k, 'KMeans'
-    # print np.mean(fb.silhouette(tmodel2, labels)), 'mean silhouette score'
+    test_users = fb.create_test_users
+    tf, tmodel, test = fb.tfidf_captions(fb_users)
+    test_X = fb.create_test_X(test_users, test)
+    X = fb.create_X(fb_users, tmodel)
+    y = fb.create_y(fb_users, tmodel)
+    # k, silhouette = fb.km(tf, tmodel)
+    # n = fb.nm(tf, tmodel)
+    # print n, 'NMF Reconstruction Error'
+    lr, lr_pred, top_one, top_cols = fb.kfold_cv(X, y, test_X)
+    the_cols = X.columns[top_cols]
+    print the_cols
+    print lr, 'Linear Regression Average Accuracy Score'
